@@ -24,11 +24,10 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('./argocd/go.sum') }}
+          key: ${{ runner.os }}-go-${{ hashFiles('./go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
       - name: Build ArgoCD Install Action
-        working-directory: ./src
         shell: bash
         run: |
           env GOOS=linux GOARCH=amd64 go build -o dist/linux
@@ -39,8 +38,8 @@ jobs:
         id: versioning
         with:
           tag_prefix: "v"
-          major_pattern: "1"
-          minor_pattern: "0"
+          major_pattern: "(MAJOR)"
+          minor_pattern: "(MINOR)"
           format: "${major}.${minor}.${patch}"
           namespace: ""
           bump_each_commit: true
