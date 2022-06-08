@@ -1,0 +1,64 @@
+name: 'ArgoCD Install App'
+description: 'Parses a deployment template and deploys it'
+inputs:
+  grpc_web:
+    description: 'Use "grpc-web" option when login'
+    required: false
+  server:
+    description: 'The argocd server to connect to'
+    required: true
+  auth_token:
+    description: 'Auth token for ArgoCD'
+    required: true
+  ticket:
+    description: 'The ticket number to use (eg. VTHP-123), you can use the ticket action to retrieve this'
+    required: true
+  version:
+    description: 'The version number to set in the helm values'
+    required: true
+  revision:
+    description: 'The revision or commit sha to use'
+    required: true
+  template:
+    description: 'The ArgoCD Application template'
+    required: true
+  service_list:
+    description: 'The list of services to generate version numbers for (<name>:<path>) will generate .Values.<name>: <version>'
+    required: true
+  use-sudo:
+    required: false
+    description: "True if sudo should be used when executing shell commands"
+  action:
+    required: true
+    description: "The action to run (create, delete)"
+    default: "create"
+  destroy_before_create:
+    required: false
+    description: "If action is create and this is set to true then the project will be deleted before being created"
+    default: "false"
+runs:
+  using: "composite"
+  steps:
+    - name: "Install"
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        echo "ArgoCD Input: [Ticket] ${{ inputs.ticket }} [Version] ${{ inputs.version }} [Revision] ${{ inputs.revision }}" >> $GITHUB_STEP_SUMMARY
+        if [ ${{ inputs.use-sudo }} = true ] ; then
+          sudo /bin/sh -c 'wget -q https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64 -O /usr/local/bin/argocd && chmod +x /usr/local/bin/argocd'
+        else
+          /bin/sh -c 'wget -q https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64 -O /usr/local/bin/argocd && chmod +x /usr/local/bin/argocd'
+        fi
+
+        ./dist/$(echo "${{runner.os}}" | tr "[:upper:]" "[:lower:]")
+      env:
+        INPUT_GRPC_WEB: ${{ inputs.grpc_web }}
+        INPUT_SERVER: ${{ inputs.server }}
+        INPUT_AUTH_TOKEN: ${{ inputs.auth_token }}
+        INPUT_TICKET: ${{ inputs.ticket }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_REVISION: ${{ inputs.revision }}
+        INPUT_TEMPLATE: ${{ inputs.template }}
+        INPUT_SERVICE_LIST: ${{ inputs.service_list }}
+        INPUT_ACTION: ${{ inputs.action }}
+        INPUT_DESTROY_BEFORE_CREATE: ${{ inputs.destroy_before_create }}
