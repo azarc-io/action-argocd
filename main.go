@@ -31,6 +31,7 @@ type Config struct {
 	client              apiclient.Client
 	Action              string
 	DestroyBeforeCreate bool
+	attempt             int
 }
 
 func run(action *ga.Action) error {
@@ -176,15 +177,6 @@ func installAction(cfg *Config, action *ga.Action) error {
 		}
 	}(closer)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*3)
-	defer cancel()
-	_, err = ac.TerminateOperation(ctx, &application.OperationTerminateRequest{
-		Name: stringRef(issueLower),
-	})
-	if err != nil {
-		action.Warningf("failed to terminate existing project, you can ignore this warning if the project was not in an active sync: %s", err.Error())
-	}
-
 	// create version for each service
 	for _, s := range cfg.Services {
 		entries := strings.Split(s, ":")
@@ -204,7 +196,7 @@ func installAction(cfg *Config, action *ga.Action) error {
 	b, _ := json.MarshalIndent(tpl, "", " ")
 	action.Infof("template:\n %s", string(b))
 
-	ctx, cancel = context.WithTimeout(context.Background(), time.Minute*5)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
 	defer cancel()
 	_, err = ac.Create(ctx, &application.ApplicationCreateRequest{
 		Application: app,
@@ -228,20 +220,25 @@ func installAction(cfg *Config, action *ga.Action) error {
 		},
 	})
 	if err != nil {
-		action.Errorf("failed to sync app, it is probably already being synced: %s", err.Error())
-	}
+		if cfg.attempt == 0 {
+			action.Errorf("failed to sync app, it is probably already being synced, will attempt to terminate the operation and try again: %s", err.Error())
+			cfg.attempt = 1
 
-	ac.Get(ctx, &application.ApplicationQuery{
-		Name:                 nil,
-		Refresh:              nil,
-		Projects:             nil,
-		ResourceVersion:      "",
-		Selector:             "",
-		Repo:                 "",
-		XXX_NoUnkeyedLiteral: struct{}{},
-		XXX_unrecognized:     nil,
-		XXX_sizecache:        0,
-	})
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute*3)
+			defer cancel()
+			_, err = ac.TerminateOperation(ctx, &application.OperationTerminateRequest{
+				Name: stringRef(issueLower),
+			})
+			if err != nil {
+				action.Warningf("failed to terminate existing project, you can ignore this warning if the project was not in an active sync: %s", err.Error())
+			}
+
+			return installAction(cfg, action)
+		} else {
+			action.Errorf("failed to sync app, it is probably already being synced: %s", err.Error())
+			return err
+		}
+	}
 
 	time.Sleep(time.Second * 3)
 
@@ -266,6 +263,7 @@ func newCfgFromInputs(action *ga.Action) (*Config, error) {
 		Template:            action.GetInput("template"),
 		Action:              action.GetInput("action"),
 		DestroyBeforeCreate: action.GetInput("destroy_before_create") == "true",
+		attempt:             0,
 	}
 
 	sl := action.GetInput("service_list")
