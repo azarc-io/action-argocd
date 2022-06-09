@@ -92,6 +92,7 @@ func deleteAction(cfg *Config, action *ga.Action) error {
 		return err
 	} else if err != nil {
 		action.Infof("skipping deletion, project does not exist")
+		return nil
 	}
 
 	timer := time.NewTicker(time.Second * 5)
