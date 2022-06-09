@@ -176,6 +176,15 @@ func installAction(cfg *Config, action *ga.Action) error {
 		}
 	}(closer)
 
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*3)
+	defer cancel()
+	_, err = ac.TerminateOperation(ctx, &application.OperationTerminateRequest{
+		Name: stringRef(issueLower),
+	})
+	if err != nil {
+		action.Warningf("failed to terminate existing project, you can ignore this warning if the project was not in an active sync: %s", err.Error())
+	}
+
 	// create version for each service
 	for _, s := range cfg.Services {
 		entries := strings.Split(s, ":")
@@ -195,7 +204,7 @@ func installAction(cfg *Config, action *ga.Action) error {
 	b, _ := json.MarshalIndent(tpl, "", " ")
 	action.Infof("template:\n %s", string(b))
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
+	ctx, cancel = context.WithTimeout(context.Background(), time.Minute*5)
 	defer cancel()
 	_, err = ac.Create(ctx, &application.ApplicationCreateRequest{
 		Application: app,
