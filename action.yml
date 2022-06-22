@@ -36,6 +36,10 @@ inputs:
     required: false
     description: "If action is create and this is set to true then the project will be deleted before being created"
     default: "false"
+  async:
+    required: false
+    description: "If set to true then will not attempt to wait for the deployment to become healthy"
+    default: "false"
 runs:
   using: "composite"
   steps:
@@ -62,3 +66,4 @@ runs:
         INPUT_SERVICE_LIST: ${{ inputs.service_list }}
         INPUT_ACTION: ${{ inputs.action }}
         INPUT_DESTROY_BEFORE_CREATE: ${{ inputs.destroy_before_create }}
+        INPUT_ASYNC: ${{ inputs.async }}

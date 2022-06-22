@@ -18,3 +18,11 @@ func boolRef(b bool) *bool {
 func stringRef(s string) *string {
 	return &s
 }
+
+func intRef(s int) *int {
+	return &s
+}
+
+func int64Ref(s int64) *int64 {
+	return &s
+}

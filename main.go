@@ -8,6 +8,8 @@ import (
 	"github.com/argoproj/argo-cd/v2/pkg/apiclient"
 	"github.com/argoproj/argo-cd/v2/pkg/apiclient/application"
 	"github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
+	"github.com/argoproj/gitops-engine/pkg/health"
+	"github.com/argoproj/gitops-engine/pkg/sync/common"
 	"github.com/commander-cli/cmd"
 	ga "github.com/sethvargo/go-githubactions"
 	"html/template"
@@ -32,6 +34,7 @@ type Config struct {
 	Action              string
 	DestroyBeforeCreate bool
 	attempt             int
+	Async               bool
 }
 
 func run(action *ga.Action) error {
@@ -208,11 +211,35 @@ func installAction(cfg *Config, action *ga.Action) error {
 		action.Fatalf("failed to deploy app: %s", err.Error())
 	}
 
+	appl, _ := ac.Get(ctx, &application.ApplicationQuery{
+		Name: stringRef(issueLower),
+	})
+	if appl != nil && (appl.Status.Health.Status == health.HealthStatusProgressing ||
+		appl.Status.OperationState.Phase == common.OperationRunning) {
+		action.Infof("existing application is currently progressing, attempting to terminate it before updating")
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute*3)
+		defer cancel()
+		_, err = ac.TerminateOperation(ctx, &application.OperationTerminateRequest{
+			Name: stringRef(issueLower),
+		})
+		if err != nil {
+			action.Warningf("failed to terminate existing operation, you can ignore this warning if the project was not in an active sync: %s", err.Error())
+		}
+	}
+
 	_, err = ac.Sync(ctx, &application.ApplicationSyncRequest{
 		Name:     stringRef(issueLower),
 		Revision: cfg.Revision,
 		DryRun:   false,
 		Prune:    true,
+		RetryStrategy: &v1alpha1.RetryStrategy{
+			Limit: 3,
+			Backoff: &v1alpha1.Backoff{
+				Duration:    "15",
+				Factor:      int64Ref(2),
+				MaxDuration: "60",
+			},
+		},
 		SyncOptions: &application.SyncOptions{
 			Items: []string{
 				"CreateNamespace=true",
@@ -220,24 +247,12 @@ func installAction(cfg *Config, action *ga.Action) error {
 		},
 	})
 	if err != nil {
-		if cfg.attempt == 0 {
-			action.Errorf("failed to sync app, it is probably already being synced, will attempt to terminate the operation and try again: %s", err.Error())
-			cfg.attempt = 1
+		action.Errorf("failed to sync app, it is probably already being synced, please wait a little while and then retry the failed task: %s", err.Error())
+		return err
+	}
 
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute*3)
-			defer cancel()
-			_, err = ac.TerminateOperation(ctx, &application.OperationTerminateRequest{
-				Name: stringRef(issueLower),
-			})
-			if err != nil {
-				action.Warningf("failed to terminate existing project, you can ignore this warning if the project was not in an active sync: %s", err.Error())
-			}
-
-			return installAction(cfg, action)
-		} else {
-			action.Errorf("failed to sync app, it is probably already being synced: %s", err.Error())
-			return err
-		}
+	if cfg.Async {
+		return nil
 	}
 
 	time.Sleep(time.Second * 3)
@@ -263,6 +278,7 @@ func newCfgFromInputs(action *ga.Action) (*Config, error) {
 		Template:            action.GetInput("template"),
 		Action:              action.GetInput("action"),
 		DestroyBeforeCreate: action.GetInput("destroy_before_create") == "true",
+		Async:               action.GetInput("async") == "true",
 		attempt:             0,
 	}
 
